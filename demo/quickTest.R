@@ -36,7 +36,27 @@ fit4 <- redis$get(key)
 ## check
 all.equal(fit, fit4)
 
+## set from redis$cmd 
+redis$cmd("SET","fit2",fit,FALSE)
 
+
+## get from redis$cmd 
+fit5 <- redis$cmd("Get","fit2",NULL,FALSE)
+
+##check
+
+all.equal(fit, fit5)
+
+
+as.character(redis$cmd("keys","*",NULL,TRUE))
+
+redis$cmd("PING","",NULL,TRUE)
+
+## set a character string from the CLI
+system("redis-cli SET testcommand testcommand")
+
+## get the string within redis with returnChar set to TRUE
+redis$cmd("Get","testcommand",NULL,TRUE)
 
                                  
                                  

@@ -32,15 +32,26 @@ private:
             Rcpp::stop(std::string("Redis connection error: ") + std::string(prc_->errstr));
     }
 	
-    SEXP extract_reply(redisReply *reply){
+    SEXP extract_reply(redisReply *reply, int returnChar){
         switch(reply->type) {
-        case REDIS_REPLY_STRING:
+        case REDIS_REPLY_STRING: {
+          if(returnChar) {
+            std::string res(reply->str);
+            return(Rcpp::wrap(res));
+          } else {
+            int nc = reply->len;
+            SEXP res = Rf_allocVector(RAWSXP, nc);
+            memcpy(RAW(res), reply->str, nc);
+            SEXP obj = unserializeFromRaw(res);
+            return(obj);
+          }
+        }
         case REDIS_REPLY_STATUS: {
             std::string res(reply->str);
             return(Rcpp::wrap(res));
         }
         case REDIS_REPLY_INTEGER: {
-            return(Rcpp::wrap(static_cast<double>(reply->integer)));
+            return(Rcpp::wrap((double)reply->integer));
         }
         case REDIS_REPLY_ERROR: {
             std::string res(reply->str);
@@ -50,18 +61,18 @@ private:
             return(R_NilValue);
         }
         case REDIS_REPLY_ARRAY: {
-            Rcpp::List retlist(reply->elements);
-            extract_array(reply, retlist);
-            return(retlist);
+            Rcpp::List retval(reply->elements);
+            extract_array(reply, retval, returnChar);
+            return(retval);
         }
         default:
             throw std::logic_error("Unknown type");
         }
     }
     
-    void extract_array(redisReply *node, Rcpp::List& retlist) {
+    void extract_array(redisReply *node, Rcpp::List& retval, int returnChar) {
         for(unsigned int i = 0;i < node->elements;i++) {
-            retlist[i] = extract_reply(node->element[i]);
+            retval[i] = extract_reply(node->element[i], returnChar);
         }
     }
 
@@ -77,9 +88,9 @@ public:
     }
 
     // execute given string
-    SEXP exec(std::string cmd) {
+    SEXP exec(std::string cmd, SEXP returnChar) {
         redisReply *reply = static_cast<redisReply*>(redisCommand(prc_, cmd.c_str()));
-        SEXP rep = extract_reply(reply);
+        SEXP rep = extract_reply(reply, Rf_asLogical(returnChar));
         freeReplyObject(reply);
         return(rep);
     }
@@ -115,21 +126,38 @@ public:
         SEXP obj = unserializeFromRaw(res);
         return(obj);
     }
-
-    // redis get
-    SEXP keys(std::string regexp) {
-
-        // uses binary protocol, see hiredis doc at github
-        redisReply *reply = 
-            static_cast<redisReply*>(redisCommand(prc_, "KEYS %s", regexp.c_str()));
-
-        unsigned int nc = reply->elements;
-        Rcpp::CharacterVector vec(nc);
-        for (unsigned int i = 0; i < nc; i++) {
-            vec[i] = reply->element[i]->str;
+    // any redis Command
+    SEXP cmd( std::string cmd, std::string key, SEXP s, SEXP returnChar)
+    {
+      int na = 1;
+      if(!key.empty()) na++;
+      if(s != R_NilValue) na++;
+      std::vector<const char *> argv( na );
+      std::vector<size_t> argvlen( na );
+      int j = 0;
+     
+      argv[j]    = cmd.c_str();
+      argvlen[j] = cmd.size();
+      ++j;
+      if(na >= 2) {
+        argv[j]    = key.c_str();
+        argvlen[j] = key.size();
+        ++j;
+        if(na >= 3) {
+          /* Will be a loop for for bulk inserts */
+          Rcpp::RawVector x = (TYPEOF(s) == RAWSXP) ? s : serializeToRaw(s);
+          argv[j]    = reinterpret_cast<const char*>(x.begin());
+          argvlen[j] = x.size();
+          ++j;
         }
-        freeReplyObject(reply);
-        return(vec);
+      }
+      redisReply *reply = static_cast<redisReply*>(redisCommandArgv(prc_
+            , argv.size()
+            , &(argv[0])
+            , &(argvlen[0])));
+      SEXP rep = extract_reply(reply, Rf_asLogical(returnChar));
+      freeReplyObject(reply);
+      return(rep);
     }
 
     // could create new functions to (re-)connect with given host and port etc pp
@@ -145,10 +173,11 @@ RCPP_MODULE(Redis) {
         .constructor<std::string>("constructor with host port")  
         .constructor<std::string, int>("constructor with host and port")  
 
-        .method("exec", &Redis::exec,  "execute given redis command and arguments")
+        .method("exec", &Redis::exec,  "execute given redis command")
 
-        .method("set",  &Redis::set,   "runs 'SET key object', serializes internally")
-        .method("get",  &Redis::get,   "runs 'GET key', deserializes internally")
-        .method("keys", &Redis::keys,  "runs 'KEYS expr' as character vector")
+        .method("set", &Redis::set,  "runs 'SET key serializedObject'")
+        .method("get", &Redis::get,  "runs 'GET key'")
+        
+        .method("cmd", &Redis::cmd,  "execute given redis command")
     ;
 }
