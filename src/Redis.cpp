@@ -127,11 +127,15 @@ public:
         return(obj);
     }
     // any redis Command
-    SEXP cmd( std::string cmd, std::string key, SEXP s, SEXP returnChar)
+    SEXP cmd( std::string cmd, std::string key, SEXP s, SEXP returnChar, SEXP breaklist)
     {
       int na = 1;
       if(!key.empty()) na++;
-      if(s != R_NilValue) na++;
+      if(s != R_NilValue) {
+        na++;
+        if(Rf_asLogical(breaklist) && Rf_isList(s) && LENGTH(s)>1)
+            na = na+LENGTH(s);
+      }
       std::vector<const char *> argv( na );
       std::vector<size_t> argvlen( na );
       int j = 0;
@@ -143,12 +147,19 @@ public:
         argv[j]    = key.c_str();
         argvlen[j] = key.size();
         ++j;
-        if(na >= 3) {
-          /* Will be a loop for for bulk inserts */
+        if(na == 3) {
           Rcpp::RawVector x = (TYPEOF(s) == RAWSXP) ? s : serializeToRaw(s);
           argv[j]    = reinterpret_cast<const char*>(x.begin());
           argvlen[j] = x.size();
-          ++j;
+        } else {
+          /* loop for for bulk inserts */
+          SEXP ss;
+          for(int i=0; i<Rf_length(s); i++, j++) {
+            ss = VECTOR_ELT(s,i);
+            Rcpp::RawVector x = (TYPEOF(ss) == RAWSXP) ? ss : serializeToRaw(ss);
+            argv[j]    = reinterpret_cast<const char*>(x.begin());
+            argvlen[j] = x.size();
+          }
         }
       }
       redisReply *reply = static_cast<redisReply*>(redisCommandArgv(prc_
