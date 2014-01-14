@@ -32,10 +32,10 @@ private:
             Rcpp::stop(std::string("Redis connection error: ") + std::string(prc_->errstr));
     }
 	
-    SEXP extract_reply(redisReply *reply, int returnChar){
+    SEXP extract_reply(redisReply *reply, bool rc){
         switch(reply->type) {
         case REDIS_REPLY_STRING: {
-          if(returnChar) {
+          if(rc) {
             std::string res(reply->str);
             return(Rcpp::wrap(res));
           } else {
@@ -62,7 +62,7 @@ private:
         }
         case REDIS_REPLY_ARRAY: {
             Rcpp::List retval(reply->elements);
-            extract_array(reply, retval, returnChar);
+            extract_array(reply, retval, rc);
             return(retval);
         }
         default:
@@ -70,9 +70,9 @@ private:
         }
     }
     
-    void extract_array(redisReply *node, Rcpp::List& retval, int returnChar) {
+    void extract_array(redisReply *node, Rcpp::List& retval, bool rc) {
         for(unsigned int i = 0;i < node->elements;i++) {
-            retval[i] = extract_reply(node->element[i], returnChar);
+            retval[i] = extract_reply(node->element[i], rc);
         }
     }
 
@@ -88,9 +88,9 @@ public:
     }
 
     // execute given string
-    SEXP exec(std::string cmd, SEXP returnChar) {
+    SEXP exec(std::string cmd, bool rc=false) {
         redisReply *reply = static_cast<redisReply*>(redisCommand(prc_, cmd.c_str()));
-        SEXP rep = extract_reply(reply, Rf_asLogical(returnChar));
+        SEXP rep = extract_reply(reply, rc);
         freeReplyObject(reply);
         return(rep);
     }
@@ -127,53 +127,63 @@ public:
         return(obj);
     }
     // any redis Command
-    SEXP cmd( std::string cmd, std::string key, SEXP s, SEXP returnChar, SEXP breaklist)
+    SEXP cmd(std::string cmd, SEXP gc, SEXP s, bool rc =false, bool bl=false)
     {
-      int na = 1;
-      if(!key.empty()) na++;
+      
+      int na = 1, j=0, i;
+      R_len_t slen = 0, gclen=0;
+      int islist    = Rf_isNewList(s);
+      if(gc != R_NilValue) {
+        if(!Rf_isNewList(gc)) Rcpp::stop("gc in cmd must be a list"); 
+        gclen = Rf_length(gc);
+        na +=  gclen;
+      }
       if(s != R_NilValue) {
         na++;
-        if(Rf_asLogical(breaklist) && Rf_isList(s) && LENGTH(s)>1)
-            na = na+LENGTH(s);
+        slen = Rf_length(s);
+        if(bl && islist && slen>1)
+            na += slen-1;
       }
       std::vector<const char *> argv( na );
       std::vector<size_t> argvlen( na );
-      int j = 0;
      
       argv[j]    = cmd.c_str();
       argvlen[j] = cmd.size();
-      ++j;
-      if(na >= 2) {
-        argv[j]    = key.c_str();
-        argvlen[j] = key.size();
-        ++j;
-        if(na == 3) {
-          Rcpp::RawVector x = (TYPEOF(s) == RAWSXP) ? s : serializeToRaw(s);
-          argv[j]    = reinterpret_cast<const char*>(x.begin());
-          argvlen[j] = x.size();
-        } else {
-          /* loop for for bulk inserts */
-          SEXP ss;
-          for(int i=0; i<Rf_length(s); i++, j++) {
+      j++;
+      /* coerce each object gc to a characterVector and attach to argv*/
+      if(gclen) {
+        for(i = 0;i < gclen ;i++) {
+            argv[i+1]   = CHAR(STRING_ELT(Rf_coerceVector(VECTOR_ELT(gc,i),STRSXP),0));
+            argvlen[i+1] = strlen(argv[i+1]);
+            j++;
+        }
+      }
+      if(na == gclen+2 ) {
+        Rcpp::RawVector x = (TYPEOF(s) == RAWSXP) ? s : serializeToRaw(s);
+        argv[j]    = reinterpret_cast<const char*>(x.begin());
+        argvlen[j] = x.size();
+      } else 
+      if(na > gclen+2) {
+        /* loop for for bulk inserts */
+        SEXP ss;
+        for( i=0; i<slen; i++) {
             ss = VECTOR_ELT(s,i);
             Rcpp::RawVector x = (TYPEOF(ss) == RAWSXP) ? ss : serializeToRaw(ss);
             argv[j]    = reinterpret_cast<const char*>(x.begin());
             argvlen[j] = x.size();
-          }
+          ++j;
         }
       }
       redisReply *reply = static_cast<redisReply*>(redisCommandArgv(prc_
             , argv.size()
             , &(argv[0])
             , &(argvlen[0])));
-      SEXP rep = extract_reply(reply, Rf_asLogical(returnChar));
+      SEXP rep = extract_reply(reply, rc);
       freeReplyObject(reply);
       return(rep);
     }
 
     // could create new functions to (re-)connect with given host and port etc pp
-
-
 };
 
 
