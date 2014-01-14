@@ -2,158 +2,144 @@
 
 redisMulti <- function()
 { 
-  redis$exec("MULTI",TRUE)
+  redisCMD("MULTI",rc=TRUE)
 }
 
 redisExec <- function()
 {
-  redis$exec("EXEC",TRUE)
+  redisCMD("EXEC",rc=TRUE)
 }
 
 redisDiscard <- function()
 {
-  redis$exec("DISCARD",TRUE)
+  redisCMD("DISCARD",rc=TRUE)
 }
 
 redisWatch <- function(keys)
 {
-  if(length(keys)>1){
-    keys <- as.list(keys)
-    for(i in keys) redis$exec(paste("WATCH",i),TRUE)
-  } else {
-    redis$exec(paste("WATCH",keys),TRUE)
-  }
+  redisCMD("WATCH",as.list(keys),rc=TRUE)
 }
 
 redisUnwatch <- function(keys)
 {
-  if(length(keys)>1){
-    keys <- as.list(keys)
-    for(i in keys) redis$exec(paste("UNWATCH",i),TRUE)
-  } else {
-    redis$exec(paste("UNWATCH",keys),TRUE)
-  }
+    redisCMD("UNWATCH",as.list(keys),rc=TRUE)
 }
 
 redisExists <- function(key) 
 {
-   redis$exec(paste("EXISTS",key),TRUE)
+   redisCMD("EXISTS",list(key),rc=TRUE)
 }
 
 redisDelete <- function(keys) 
 {
-  if(length(keys)>1) {
-    if(is.list(keys)) keys <- unlist(keys)
-    keys <- paste0(keys,collapse=" ")
-  }
-  redis$exec(paste("DEL",keys),TRUE)
+  redisCMD("DEL",as.list(keys),rc=TRUE)
 }
 
 redisType <- function(key) 
 {
-  redis$exec(paste("TYPE",key),TRUE)
+  redisCMD("TYPE",list(key),rc=TRUE)
 }
 
 redisKeys <- function(pattern="*") 
 {
-  res <- redis$exec(paste("KEYS",pattern),TRUE)
+  res <- redisCMD("KEYS",list(pattern),rc=TRUE)
   unlist(res)
 }
 
 redisRandomKey <- function() 
 {
-  redis$exec("RANDOMKEY")
+  redisCMD("RANDOMKEY",rc=TRUE)
 }
 
 redisRename <- function(old, new) 
 {
-  redis$exec(paste("RENAME",old,new),TRUE)
+  redisCMD("RENAME",list(old,new),rc=TRUE)
 }
 
 redisRenameX <- function(old, new) 
 {
-  redis$exec(paste("RENAMEX",old,new),TRUE)
+  redisCMD("RENAMEX",list(old,new),rc=TRUE)
 }
 
 redisPexpire <- function(key, milliseconds)
 {
-   redis$exec(paste("PEXPIRE",key,milliseconds),TRUE)
+   redis$exec("PEXPIRE",list(key,milliseconds),rc=TRUE)
 }
 
 redisPexpireAt <- function(key, time)
 {
    if(missing(time)) stop("Please provide time")
-   redis$exec(paste("PEXPIREAT",key,as.character(time)),TRUE)
+   redisCMD("PEXPIREAT",list(key,as.character(time)),rc=TRUE)
 }
 
 redisPTTL <- function(key)
 {
-   redis$exec(paste("PTTL",key),TRUE)
+   redisCMD("PTTL",list(key),rc=TRUE)
 }
 
 redisPersist <- function(key)
 {
-   redis$exec(paste("PERSIST",key),TRUE)
+   redisCMD("PERSIST",list(key),rc=TRUE)
 }
 
 redisExpire <- function(key, seconds) 
 {
-   redis$exec(paste("EXPIRE",key,seconds),TRUE)
+   redisCMD("EXPIRE",list(key,seconds),rc=TRUE)
 }
 
 redisExpireAt <- function(key, time) 
 { 
   if(missing(time)) stop("Please provide time")
   if(is.character(time)) time <- as.POSIXct(time)
-  redis$exec(paste("EXPIREAT",key,as.numeric(time)),TRUE)
+  redisCMD("EXPIREAT",list(key,as.numeric(time)),rc=TRUE)
 }
 
 redisTTL <- function(key) 
 {
-  redis$exec(paste("TTL",key),TRUE)
+  redisCMD("TTL",list(key),rc=TRUE)
 }
 
 redisMove <- function(key, dbindex) 
 {
-  redis$exec(paste("MOVE",key,dbindex),TRUE)
+  redisCMD("MOVE",list(key,dbindex),rc=TRUE)
 }
 
 redisQuit <- redisClose <- function()
 {
-  redis$exec("QUIT",TRUE)
+  redisCMD("QUIT",rc=TRUE)
 }
 
 redisAuth <- function(pwd)
 {
-  redis$exec(paste("AUTH", pwd),TRUE)
+  redisCMD("AUTH", list(pwd),rc=TRUE)
 }
 
 redisSave <- function()
 {
-  redis$exec("SAVE",TRUE)
+  redisCMD("SAVE",rc=TRUE)
 }
 
 redisBgSave <- function()
 {
-  redis$exec('BGSAVE',TRUE)
+  redisCMD('BGSAVE',rc=TRUE)
 }
 
 redisBgRewriteAOF <- function()
 {
-  redis$exec('BGREWRITEAOF',TRUE)
+  redisCMD('BGREWRITEAOF',rc=TRUE)
 }
 
 redisShutDown <- function(save=TRUE)
 {  
   s <- if(save) "SAVE" else "NOSAVE"
-  redis$exec(paste('SHUTDOWN',s),TRUE)
+  redisCMD('SHUTDOWN',list(s),rc=TRUE)
 }
 
 ### POSIX == TRUE returns the POSIXct time stamp with microseconds
 #   FALSE returns the default list cast to numerics
 redisTime <- function(POSIX=TRUE)
 {
-  x <- redis$exec('TIME',TRUE)
+  x <- redisCMD('TIME',rc=TRUE)
   if(POSIX) {
     .POSIXct(as.numeric(x[[1]])+as.numeric(x[[2]])*.00001)
   } else {
@@ -165,7 +151,7 @@ redisTime <- function(POSIX=TRUE)
 # copied directly from rredis  
 redisInfo <- function()
 {
-  x <- .redis$exec('INFO',TRUE)
+  x <- redisCMD('INFO',rc=TRUE)
   z <- strsplit(x,'\r\n')[[1]]
   rj <- c(grep("^$",z), grep("^#",z))
   if(length(rj)>0) z <- z[-rj]
@@ -181,28 +167,28 @@ redisInfo <- function()
 redisSlaveOf <- function(host,port)
 {
 # Use host="no" port="one" to disable slave replication # from b.w.lewis
-  redis$exec(paste('SLAVEOF',host,port),TRUE)
+  redisCMD('SLAVEOF',list(host,port),rc=TRUE)
 }
 
 redisFlushDB <- function() {
-  redis$exec('FLUSHDB',TRUE)
+  redisCMD('FLUSHDB',rc=TRUE)
 }
 
 redisFlushAll <- function() {
-  redis$exec('FLUSHALL',TRUE)
+  redisCMD('FLUSHALL',rc=TRUE)
 }
 
 redisSelect <- function(index) {
   if(missing(index)) stop("Which index should we select?")
-  redis$exec(paste('SELECT',index),TRUE)
+  redisCMD('SELECT',list(index),rc=TRUE)
 }
 
 redisPing <- function() {
-  redis$exec('PING',TRUE)
+  redisCMD('PING',rc=TRUE)
 }
 
 redisDBSize <- function() {
-  redis$exec('DBSIZE',TRUE)
+  redisCMD('DBSIZE',rc=TRUE)
 }
 
 
