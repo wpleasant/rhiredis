@@ -1,15 +1,10 @@
 ##### list commands #####
-redisCMD <- function(cmd,ocmds=NULL,value=NULL,rc=FALSE,bl=FALSE){
-  if(!is.null(ocmds) && !is.list(ocmds)) ocmds <- as.list(ocmds) 
-  redis$cmd(cmd,ocmds,value,rc,bl)
-}
-
-redisRPush <- function(key, value, rc=FALSE, bl=FALSE)
+redisRPush <- function(key, value=NULL, rc=FALSE, bl=FALSE)
 {
   redisCMD("RPUSH",key, value, rc, bl)
 }
 
-redisLPush <- function(key, value, rc=FALSE, bl=FALSE)
+redisLPush <- function(key, value=NULL, rc=FALSE, bl=FALSE)
 {
   redisCMD("LPUSH",key,value,rc,bl)
 }
